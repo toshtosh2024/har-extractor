@@ -1,0 +1,1856 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src blob: data:"
+    >
+    <title>HAR 抽出ツール</title>
+    <style>
+      /* Theme and base elements */
+      :root {
+        color-scheme: light dark;
+        --bg: #f5f7fa;
+        --panel: #fff;
+        --text: #202b3b;
+        --muted: #657387;
+        --line: #dbe1e9;
+        --accent: #245bce;
+        --selected: #e8efff;
+        --warn: #b63324;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.6 system-ui, sans-serif;
+      }
+
+      /* Header and controls */
+      header {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 20px 24px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+      }
+
+      h1 {
+        font-size: 24px;
+        margin: 0;
+      }
+
+      h2 {
+        font-size: 16px;
+        margin: 0 0 12px;
+      }
+
+      button,
+      .file-button,
+      select,
+      input[type=search] {
+        font: inherit;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--text);
+        padding: 6px 10px;
+      }
+
+      button,
+      .file-button {
+        cursor: pointer;
+      }
+
+      button:hover:not(:disabled) {
+        border-color: var(--accent);
+      }
+
+      button:disabled {
+        opacity: .45;
+        cursor: default;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      summary:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .primary {
+        background: var(--accent);
+        color: white;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      /* Filtering and bulk selection */
+      .toolbar,
+      .formats {
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel);
+      }
+
+      .line {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        margin: 6px 0;
+      }
+
+      input[type=search] {
+        width: min(420px,100%);
+      }
+
+      label {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      input[type=checkbox] {
+        accent-color: var(--accent);
+      }
+
+      #chips button[aria-pressed=true] {
+        background: var(--selected);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+
+      #format-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+      }
+
+      /* Table and detail pane */
+      .workspace {
+        display: grid;
+        grid-template-columns: minmax(0,1fr) 360px;
+        align-items: start;
+      }
+
+      .table-wrap {
+        overflow: auto;
+        max-height: 72vh;
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        white-space: nowrap;
+        background: var(--panel);
+      }
+
+      th,
+      td {
+        padding: 9px 10px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 1;
+      }
+
+      th button {
+        border: 0;
+        background: transparent;
+        padding: 0;
+      }
+
+      td.url {
+        max-width: 280px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      td.name {
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      tr.active {
+        background: var(--selected);
+      }
+
+      tbody tr {
+        cursor: pointer;
+      }
+
+      .warning {
+        color: var(--warn);
+      }
+
+      aside {
+        position: sticky;
+        top: 0;
+        max-height: 100vh;
+        overflow: auto;
+        padding: 20px;
+        border-left: 1px solid var(--line);
+        overflow-wrap: anywhere;
+        min-height: 300px;
+      }
+
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        padding: 10px;
+        max-height: 360px;
+        overflow: auto;
+        font-size: 12px;
+      }
+
+      details {
+        margin: 12px 0;
+      }
+
+      summary {
+        cursor: pointer;
+      }
+
+      aside img {
+        max-width: 100%;
+        max-height: 320px;
+        object-fit: contain;
+      }
+
+      /* Messages and drag overlay */
+      #message {
+        margin: 12px 24px;
+        padding: 10px;
+        border: 1px solid var(--warn);
+        color: var(--warn);
+        white-space: pre-wrap;
+      }
+
+      #message:empty {
+        display: none;
+      }
+
+      #drop-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 10;
+        background: #183668e8;
+        color: white;
+        place-items: center;
+        font-size: 26px;
+        pointer-events: none;
+        display: none;
+      }
+
+      #drop-overlay.visible {
+        display: grid;
+      }
+
+      .empty {
+        padding: 30px;
+        color: var(--muted);
+      }
+
+      #file {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+      }
+
+      .file-button:focus-within {
+        outline: 2px solid var(--accent);
+      }
+
+      /* Dark theme */
+      @media(prefers-color-scheme:dark) {
+        :root {
+          --bg: #141b25;
+          --panel: #1c2532;
+          --text: #e1e8f2;
+          --muted: #a4b1c4;
+          --line: #344155;
+          --accent: #82adff;
+          --selected: #273d60;
+          --warn: #ff9c8c;
+        }
+
+        .primary {
+          color: #12213a;
+        }
+
+      }
+
+      /* Narrow screens */
+      @media(max-width:1000px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        aside {
+          position: static;
+          max-height: none;
+          border-left: 0;
+          border-top: 1px solid var(--line);
+        }
+
+        .table-wrap {
+          max-height: 60vh;
+        }
+
+        header,
+        .toolbar,
+        .formats {
+          padding: 12px;
+        }
+
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>HAR 抽出ツール</h1>
+      <label class="file-button">
+        HARファイルを選択
+        <input id="file" type="file" accept=".har,application/json">
+      </label>
+      <span id="loaded" class="muted">ファイルを選択、またはここにドロップ</span>
+    </header>
+    <div id="message" role="alert">
+    </div>
+    <section class="toolbar" aria-label="表示・ダウンロード設定">
+      <div class="line">
+        <input id="search" type="search" placeholder="URLを検索" aria-label="URLを検索">
+        <label>
+          <input id="body-only" type="checkbox">
+          本体ありのみ表示
+        </label>
+      </div>
+      <div id="chips" class="line" aria-label="カテゴリ">
+      </div>
+      <div class="line">
+        <label>
+          並び順
+          <select id="sort">
+            <option value="index">通信順</option>
+            <option value="name">名前順</option>
+            <option value="url">URL順</option>
+            <option value="format">形式順</option>
+            <option value="size">サイズ順</option>
+            <option value="status">ステータス順</option>
+            <option value="time">時間順</option>
+          </select>
+        </label>
+        <button id="direction">昇順 ▲</button>
+        <button id="select-visible">表示中を全選択</button>
+        <button id="clear">選択解除</button>
+        <span id="selection" role="status">
+        </span>
+      </div>
+      <div class="line">
+        <label>
+          <input id="keep-dirs" type="checkbox" checked>
+          URLのフォルダ構造を保持
+        </label>
+        <label>
+          <input id="include-requests" type="checkbox">
+          POSTボディも含める
+        </label>
+        <label>
+          <input id="merge-pdf" type="checkbox">
+          画像をPDFに結合（画面の並び順）
+        </label>
+        <label>
+          <input id="keep-images" type="checkbox" disabled>
+          元の画像もZIPに含める
+        </label>
+        <button id="zip" class="primary" disabled>選択をZIPでダウンロード (0件)</button>
+      </div>
+    </section>
+    <section class="formats">
+      <h2>形式で一括選択</h2>
+      <div id="format-options" class="muted">
+        HARを読み込むと形式が表示されます
+      </div>
+    </section>
+    <main class="workspace">
+      <div class="table-wrap">
+        <table aria-label="通信一覧">
+          <thead>
+            <tr>
+              <th>
+                選択
+              </th>
+              <th>
+                <button data-sort="index">#</button>
+              </th>
+              <th>
+                <button data-sort="name">ファイル名</button>
+              </th>
+              <th>
+                メソッド
+              </th>
+              <th>
+                <button data-sort="status">ステータス</button>
+              </th>
+              <th>
+                <button data-sort="format">形式</button>
+              </th>
+              <th>
+                <button data-sort="url">URL</button>
+              </th>
+              <th>
+                <button data-sort="size">サイズ</button>
+              </th>
+              <th>
+                <button data-sort="time">時間(ms)</button>
+              </th>
+              <th>
+                個別DL
+              </th>
+            </tr>
+          </thead>
+          <tbody id="rows">
+          </tbody>
+        </table>
+        <div id="empty" class="empty">
+          HARファイルを読み込んでください。
+        </div>
+      </div>
+      <aside id="detail" aria-label="通信の詳細">
+        <h2>通信の詳細</h2>
+        <p class="muted">行をクリックすると詳細を表示します。</p>
+      </aside>
+    </main>
+    <div id="drop-overlay">
+      HARファイルをドロップ
+    </div>
+    <script id="har-core">
+      'use strict';
+
+      (() => {
+        const encoder = new TextEncoder();
+        const cleanMime = mime => String(mime || '').split(';')[0].trim().toLowerCase();
+
+        function extFromMime(mime) {
+          mime = cleanMime(mime);
+          if (mime.endsWith('+json')) {
+            return 'json';
+          }
+          const map = {
+            'image/png': 'png',
+            'image/jpeg': 'jpg',
+            'image/svg+xml': 'svg',
+            'application/json': 'json',
+            'text/javascript': 'js',
+            'application/javascript': 'js',
+            'application/x-javascript': 'js',
+            'text/css': 'css',
+            'text/html': 'html',
+            'text/plain': 'txt',
+            'font/woff2': 'woff2',
+            'font/woff': 'woff',
+            'image/webp': 'webp',
+            'image/avif': 'avif',
+            'image/bmp': 'bmp',
+            'image/gif': 'gif',
+            'image/x-icon': 'ico',
+            'image/vnd.microsoft.icon': 'ico',
+            'video/mp4': 'mp4',
+            'video/webm': 'webm',
+            'video/ogg': 'ogg',
+            'audio/mpeg': 'mp3',
+            'audio/ogg': 'ogg',
+            'audio/wav': 'wav',
+            'audio/x-wav': 'wav',
+            'audio/mp4': 'm4a',
+            'font/ttf': 'ttf',
+            'application/x-font-ttf': 'ttf',
+            'font/otf': 'otf',
+            'application/font-woff': 'woff',
+            'application/pdf': 'pdf',
+            'text/csv': 'csv',
+            'text/markdown': 'md',
+            'application/zip': 'zip',
+            'application/x-protobuf': 'pb',
+            'application/protobuf': 'pb',
+            'text/event-stream': 'txt',
+            'application/octet-stream': 'bin',
+            'application/xml': 'xml',
+            'text/xml': 'xml',
+            'application/wasm': 'wasm'
+          };
+          return map[mime] || 'bin';
+        }
+
+        function categorize(mime, resourceType) {
+          mime = cleanMime(mime);
+          const types = {
+            document: 'doc',
+            script: 'js',
+            stylesheet: 'css',
+            image: 'img',
+            media: 'media',
+            font: 'font'
+          };
+          if (types[resourceType]) {
+            return types[resourceType];
+          }
+          if (mime === 'application/json' || mime.endsWith('+json')) {
+            return 'json';
+          }
+          if (mime.startsWith('image/')) {
+            return 'img';
+          }
+          if (/^(audio|video)\//.test(mime)) {
+            return 'media';
+          }
+          if (mime.startsWith('font/') || /woff|font|opentype/.test(mime)) {
+            return 'font';
+          }
+          if (/javascript|ecmascript/.test(mime)) {
+            return 'js';
+          }
+          if (mime === 'text/html' || mime === 'application/xhtml+xml') {
+            return 'doc';
+          }
+          if (mime === 'text/css') {
+            return 'css';
+          }
+          return 'other';
+        }
+
+        function embeddedUrlKind(url) {
+          return /^(data|blob):/i.exec(String(url || '').trim())?.[1].toLowerCase() || '';
+        }
+
+        function embeddedMime(entry, kind) {
+          if (kind === 'data') {
+            const url = String(entry.url).trim();
+            const comma = url.indexOf(',');
+            const suffix = url.search(/[?#]/);
+            if (comma >= 0 && (suffix < 0 || comma < suffix)) {
+              try {
+                const mime = cleanMime(decodeURIComponent(url.slice(5, comma).split(';')[0]));
+                const mediaType = /^[a-z0-9!#$%&'*+.^_`|~-]+\/[a-z0-9!#$%&'*+.^_`|~-]+$/i;
+                if (mediaType.test(mime)) {
+                  return mime;
+                }
+              } catch {
+                // Invalid percent escapes use the same response-MIME fallback.
+              }
+            }
+          }
+          // Missing or malformed metadata must not turn the payload into a filename.
+          return entry.mime;
+        }
+
+        function urlParts(url) {
+          const kind = embeddedUrlKind(url);
+          try {
+            const u = new URL(url);
+            return {
+              host: kind ? kind + ':' : u.host,
+              path: u.pathname,
+              query: u.search
+            };
+          } catch {
+            const raw = String(url || '').split('#')[0];
+            const s = kind ? raw.trim().slice(kind.length + 1) : raw;
+            const q = s.indexOf('?');
+            return {
+              host: kind ? kind + ':' : 'unknown',
+              path: q < 0 ? s : s.slice(0, q),
+              query: q < 0 ? '' : s.slice(q)
+            };
+          }
+        }
+
+        function safeDecode(s) {
+          try {
+            return decodeURIComponent(s);
+          } catch {
+            return s;
+          }
+        }
+
+        function pathSegments(entry) {
+          return safeDecode(urlParts(entry.url).path).split('/').filter(s => s && s !== '.' && s !== '..');
+        }
+
+        function extension(name) {
+          return /\.([a-z0-9]{1,5})$/i.exec(name)?.[1].toLowerCase();
+        }
+
+        function formatOf(entry) {
+          const kind = embeddedUrlKind(entry.url);
+          if (kind) {
+            return extFromMime(embeddedMime(entry, kind));
+          }
+          const path = urlParts(entry.url).path;
+          const ext = path.endsWith('/') ? extFromMime(entry.mime) : extension(pathSegments(entry).at(-1) || '') || extFromMime(entry.mime);
+          return {
+            jpeg: 'jpg',
+            htm: 'html',
+            mjs: 'js'
+          }[ext] || ext;
+        }
+
+        function sanitize(s) {
+          s = s.replace(/[<>:"\\|?*\x00-\x1f\x7f]/g, '_').replace(/[. ]+$/g, '');
+          if (!s || s === '.' || s === '..') {
+            s = '_';
+          }
+          const stem = s.split('.')[0].replace(/ +$/g, '');
+          if (/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(stem)) {
+            s = '_' + s;
+          }
+          if (s.length > 100) {
+            const ext = extension(s);
+            const suffix = ext ? '.' + ext : '';
+            s = s.slice(0, 100 - suffix.length) + suffix;
+          }
+          return s.replace(/[. ]+$/g, '') || '_';
+        }
+
+        function makeFilename(entry, {
+          keepDirs = false
+        } = {}) {
+          const kind = embeddedUrlKind(entry.url);
+          if (kind) {
+            const index = Number.isSafeInteger(entry.index) && entry.index >= 0 ? entry.index : 0;
+            const name = `${kind}_${index}.${formatOf(entry)}`;
+            return keepDirs ? `_${kind}/${name}` : name;
+          }
+          const parts = urlParts(entry.url);
+          const segments = pathSegments(entry);
+          if (!parts.path || parts.path.endsWith('/') || !segments.length) {
+            segments.push('index.' + extFromMime(entry.mime));
+          } else if (!extension(segments.at(-1))) {
+            segments[segments.length - 1] += '.' + extFromMime(entry.mime);
+          }
+          const safe = segments.map(sanitize);
+          return keepDirs ? [sanitize(parts.host || 'unknown'), ...safe].join('/') : safe.at(-1);
+        }
+
+        function parseHar(text) {
+          let har;
+          try {
+            har = JSON.parse(text);
+          } catch {
+            throw new Error('JSONとして読み込めません。HARファイルを確認してください。');
+          }
+          if (!Array.isArray(har?.log?.entries)) {
+            throw new Error('HARの log.entries が存在しないか、配列ではありません。');
+          }
+          return har.log.entries.map((raw, index) => {
+            const request = raw?.request || {};
+            const response = raw?.response || {};
+            const content = response.content || {};
+            const url = String(request.url || '');
+            const mime = cleanMime(content.mimeType);
+            const hasBody = typeof content.text === 'string' && content.text.length > 0;
+            let bodySize = 0;
+            if (hasBody) {
+              if (content.encoding === 'base64') {
+                const s = content.text.replace(/\s/g, '');
+                bodySize = Math.max(0, Math.floor(s.length * 3 / 4) - (s.match(/=*$/)?.[0].length || 0));
+              } else {
+                bodySize = encoder.encode(content.text).length;
+              }
+            }
+            const entry = {
+              index,
+              method: String(request.method || 'GET'),
+              url,
+              ...urlParts(url),
+              status: Number(response.status) || 0,
+              statusText: String(response.statusText || ''),
+              mime,
+              category: categorize(mime, raw?._resourceType),
+              bodySize,
+              time: Number(raw?.time) || 0,
+              startedDateTime: String(raw?.startedDateTime || ''),
+              hasBody,
+              hasRequestBody: typeof request.postData?.text === 'string' && request.postData.text.length > 0,
+              raw
+            };
+            entry.format = formatOf(entry);
+            entry.name = makeFilename(entry, {
+              keepDirs: false
+            });
+            return entry;
+          });
+        }
+
+        function decodeResponseBody(entry) {
+          const content = entry.raw?.response?.content;
+          if (typeof content?.text !== 'string' || !content.text.length) {
+            return null;
+          }
+          if (content.encoding !== 'base64') {
+            return encoder.encode(content.text);
+          }
+          try {
+            const binary = atob(content.text.replace(/\s/g, ''));
+            return Uint8Array.from(binary, c => c.charCodeAt(0));
+          } catch {
+            throw new Error('レスポンスのBase64データが不正です。');
+          }
+        }
+
+        function decodeRequestBody(entry) {
+          const s = entry.raw?.request?.postData?.text;
+          return typeof s === 'string' && s.length ? encoder.encode(s) : null;
+        }
+
+        function dedupeNames(names) {
+          const reserved = new Set(names.map(name => name.toLowerCase()));
+          const used = new Set();
+          return names.map(name => {
+            let candidate = name;
+            if (used.has(candidate.toLowerCase())) {
+              const dot = name.lastIndexOf('.');
+              const pos = dot > name.lastIndexOf('/') ? dot : name.length;
+              let suffix = 2;
+              do {
+                candidate = name.slice(0, pos) + '_' + suffix++ + name.slice(pos);
+              } while (reserved.has(candidate.toLowerCase()) || used.has(candidate.toLowerCase()));
+            }
+            used.add(candidate.toLowerCase());
+            return candidate;
+          });
+        }
+
+        function sortEntries(entries, key, dir) {
+          const field = key === 'size' ? 'bodySize' : key;
+          const sign = dir === 'desc' ? -1 : 1;
+          return [...entries].sort((a, b) => {
+            const x = a[field];
+            const y = b[field];
+            const cmp = typeof x === 'string' ? x.localeCompare(y, 'ja', {
+              numeric: true,
+              sensitivity: 'base'
+            }) : x - y;
+            return cmp * sign || a.index - b.index;
+          });
+        }
+        const crcTable = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+          let c = n;
+          for (let k = 0; k < 8; k++) {
+            c = c & 1 ? 0xedb88320 ^ c >>> 1 : c >>> 1;
+          }
+          crcTable[n] = c >>> 0;
+        }
+
+        function crc32(bytes) {
+          let c = 0xffffffff;
+          for (const b of bytes) {
+            c = crcTable[(c ^ b) & 255] ^ c >>> 8;
+          }
+          return (c ^ 0xffffffff) >>> 0;
+        }
+
+        function buildZip(files) {
+          const limit = 0xffffffff;
+          const fail = () => {
+            throw new Error('ZIP形式の上限（4 GB・65535件）を超えています。選択を減らしてください。');
+          };
+          if (files.length > 65535) {
+            fail();
+          }
+          let size = 22;
+          const records = files.map(file => {
+            const name = encoder.encode(file.name);
+            if (name.length > 65535 || file.bytes.length > limit) {
+              fail();
+            }
+            size += 76 + name.length * 2 + file.bytes.length;
+            if (size > limit) {
+              fail();
+            }
+            return {
+              ...file,
+              nameBytes: name
+            };
+          });
+          const out = new Uint8Array(size);
+          const view = new DataView(out.buffer);
+          let p = 0;
+          const u16 = n => {
+            view.setUint16(p, n, true);
+            p += 2;
+          };
+          const u32 = n => {
+            view.setUint32(p, n, true);
+            p += 4;
+          };
+          const put = b => {
+            out.set(b, p);
+            p += b.length;
+          };
+          const now = new Date();
+          const year = Math.min(2107, Math.max(1980, now.getFullYear()));
+          const date = year - 1980 << 9 | now.getMonth() + 1 << 5 | now.getDate();
+          const time = now.getHours() << 11 | now.getMinutes() << 5 | now.getSeconds() >> 1;
+          for (const f of records) {
+            f.offset = p;
+            f.crc = crc32(f.bytes);
+            u32(0x04034b50);
+            u16(20);
+            u16(0x800);
+            u16(0);
+            u16(time);
+            u16(date);
+            u32(f.crc);
+            u32(f.bytes.length);
+            u32(f.bytes.length);
+            u16(f.nameBytes.length);
+            u16(0);
+            put(f.nameBytes);
+            put(f.bytes);
+          }
+          const central = p;
+          for (const f of records) {
+            u32(0x02014b50);
+            u16(20);
+            u16(20);
+            u16(0x800);
+            u16(0);
+            u16(time);
+            u16(date);
+            u32(f.crc);
+            u32(f.bytes.length);
+            u32(f.bytes.length);
+            u16(f.nameBytes.length);
+            u16(0);
+            u16(0);
+            u16(0);
+            u16(0);
+            u32(0);
+            u32(f.offset);
+            put(f.nameBytes);
+          }
+          const centralSize = p - central;
+          u32(0x06054b50);
+          u16(0);
+          u16(0);
+          u16(records.length);
+          u16(records.length);
+          u32(centralSize);
+          u32(central);
+          u16(0);
+          return out;
+        }
+
+        function exifOrientation(bytes, start, end) {
+          if (end - start < 14 || String.fromCharCode(...bytes.subarray(start, start + 6)) !== 'Exif\0\0') {
+            return 1;
+          }
+          const tiff = start + 6;
+          const little = bytes[tiff] === 0x49 && bytes[tiff + 1] === 0x49;
+          const big = bytes[tiff] === 0x4d && bytes[tiff + 1] === 0x4d;
+          if (!little && !big) {
+            return 1;
+          }
+          const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          if (view.getUint16(tiff + 2, little) !== 42) {
+            return 1;
+          }
+          const offset = view.getUint32(tiff + 4, little);
+          const ifd = tiff + offset;
+          if (offset < 8 || ifd + 2 > end) {
+            return 1;
+          }
+          const count = view.getUint16(ifd, little);
+          if (ifd + 2 + count * 12 + 4 > end) {
+            return 1;
+          }
+          for (let i = 0; i < count; i++) {
+            const tag = ifd + 2 + i * 12;
+            if (view.getUint16(tag, little) === 0x0112 && view.getUint16(tag + 2, little) === 3
+                && view.getUint32(tag + 4, little) === 1) {
+              const orientation = view.getUint16(tag + 8, little);
+              return orientation >= 1 && orientation <= 8 ? orientation : 1;
+            }
+          }
+          return 1;
+        }
+
+        function jpegInfo(bytes) {
+          try {
+            if (!bytes || bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
+              return null;
+            }
+            let position = 2;
+            let frame = null;
+            let orientation = 1;
+            let sawExif = false;
+            let inScan = false;
+            let sawScan = false;
+            while (position < bytes.length) {
+              if (inScan) {
+                // Entropy data escapes FF as FF00; restart markers stay inside the scan.
+                if (bytes[position++] !== 0xff) {
+                  continue;
+                }
+                while (bytes[position] === 0xff) {
+                  position++;
+                }
+                const marker = bytes[position];
+                if (marker === 0 || (marker >= 0xd0 && marker <= 0xd7)) {
+                  position++;
+                  continue;
+                }
+                position--;
+                inScan = false;
+              }
+              if (bytes[position++] !== 0xff) {
+                return null;
+              }
+              while (bytes[position] === 0xff) {
+                position++;
+              }
+              const marker = bytes[position++];
+              if (marker === 0xd9) {
+                return frame && sawScan ? { ...frame, orientation } : null;
+              }
+              if (marker === 0 || marker === 0xd8 || marker === undefined) {
+                return null;
+              }
+              if (marker === 1 || (marker >= 0xd0 && marker <= 0xd7)) {
+                continue;
+              }
+              if (position + 2 > bytes.length) {
+                return null;
+              }
+              const length = bytes[position] * 256 + bytes[position + 1];
+              const end = position + length;
+              if (length < 2 || end > bytes.length) {
+                return null;
+              }
+              if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
+                if (length < 8) {
+                  return null;
+                }
+                const height = bytes[position + 3] * 256 + bytes[position + 4];
+                const width = bytes[position + 5] * 256 + bytes[position + 6];
+                const components = bytes[position + 7];
+                if (!width || !height || !components || length < 8 + 3 * components) {
+                  return null;
+                }
+                frame = { width, height, components, progressive: [0xc2, 0xc6, 0xca, 0xce].includes(marker) };
+              } else if (marker === 0xe1 && !sawExif && length >= 8
+                  && String.fromCharCode(...bytes.subarray(position + 2, position + 8)) === 'Exif\0\0') {
+                orientation = exifOrientation(bytes, position + 2, end);
+                sawExif = true;
+              } else if (marker === 0xda) {
+                if (!frame || length < 6 || length < 6 + 2 * bytes[position + 2]) {
+                  return null;
+                }
+                sawScan = true;
+                inScan = true;
+              }
+              position = end;
+            }
+            return null;
+          } catch {
+            return null;
+          }
+        }
+
+        function buildPdf(pages) {
+          if (!pages.length) {
+            throw new Error('PDFに含める画像がありません。');
+          }
+          const chunks = [];
+          const offsets = [0];
+          let length = 0;
+          const append = value => {
+            const bytes = typeof value === 'string' ? encoder.encode(value) : value;
+            chunks.push(bytes);
+            length += bytes.length;
+          };
+          const object = (id, body, stream) => {
+            offsets[id] = length;
+            append(`${id} 0 obj\n${body}`);
+            if (stream) {
+              append(` /Length ${stream.length} >>\nstream\n`);
+              append(stream);
+              append('\nendstream');
+            }
+            append('\nendobj\n');
+          };
+          const number = value => {
+            if (!Number.isFinite(value) || value <= 0 || value > 14400) {
+              throw new Error('PDFのページサイズが不正です。');
+            }
+            const formatted = value.toFixed(4).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
+            if (Number(formatted) <= 0) {
+              throw new Error('PDFのページサイズが小さすぎます。');
+            }
+            return formatted;
+          };
+          append('%PDF-1.4\n');
+          append(new Uint8Array([0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a]));
+          object(1, '<< /Type /Catalog /Pages 2 0 R >>');
+          const kids = pages.map((page, index) => `${3 + index * 3} 0 R`).join(' ');
+          object(2, `<< /Type /Pages /Count ${pages.length} /Kids [${kids}] >>`);
+          pages.forEach((page, index) => {
+            const id = 3 + index * 3;
+            const width = number(page.widthPt);
+            const height = number(page.heightPt);
+            const image = page.image;
+            if (!Number.isSafeInteger(image.width) || !Number.isSafeInteger(image.height) || image.width <= 0 || image.height <= 0
+                || !['jpeg', 'flate'].includes(image.kind) || (image.kind === 'jpeg' && ![1, 3].includes(image.components))) {
+              throw new Error('PDFの画像データが不正です。');
+            }
+            object(id, `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} ${height}]`
+              + ` /Resources << /XObject << /Im0 ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>`);
+            object(id + 1, '<<', encoder.encode(`q ${width} 0 0 ${height} 0 0 cm /Im0 Do Q\n`));
+            const color = image.kind === 'jpeg' && image.components === 1 ? 'DeviceGray' : 'DeviceRGB';
+            const filter = image.kind === 'jpeg' ? 'DCTDecode' : 'FlateDecode';
+            object(id + 2, `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height}`
+              + ` /ColorSpace /${color} /BitsPerComponent 8 /Filter /${filter}`, image.bytes);
+          });
+          const infoId = 3 + pages.length * 3;
+          const producer = 'HAR 抽出ツール';
+          const hex = Array.from(producer, character => character.charCodeAt(0).toString(16).padStart(4, '0')).join('');
+          object(infoId, `<< /Producer <feff${hex}> >>`);
+          const xref = length;
+          append(`xref\n0 ${infoId + 1}\n0000000000 65535 f\r\n`);
+          for (let id = 1; id <= infoId; id++) {
+            if (offsets[id] > 9999999999) {
+              throw new Error('PDFのサイズが上限を超えています。');
+            }
+            append(`${String(offsets[id]).padStart(10, '0')} 00000 n\r\n`);
+          }
+          append(`trailer\n<< /Size ${infoId + 1} /Root 1 0 R /Info ${infoId} 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+          const result = new Uint8Array(length);
+          let position = 0;
+          for (const chunk of chunks) {
+            result.set(chunk, position);
+            position += chunk.length;
+          }
+          return result;
+        }
+
+        function buildManifestCsv(rows) {
+          const quote = v => {
+            let s = String(v ?? '');
+            if (/^[=+\-@\t\r]/.test(s)) {
+              s = "'" + s;
+            }
+            return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+          };
+          const columns = ['file', 'url', 'method', 'status', 'mime'];
+          const records = rows.map(row => columns.map(key => quote(row[key])).join(','));
+          return '\ufefffile,url,method,status,mime\r\n'
+            + records.join('\r\n')
+            + (rows.length ? '\r\n' : '');
+        }
+
+        function formatBytes(n) {
+          n = Number(n) || 0;
+          let i = 0;
+          while (n >= 1024 && i < 3) {
+            n /= 1024;
+            i++;
+          }
+          return (i ? n.toFixed(2) : String(n)) + ' ' + ['B', 'KB', 'MB', 'GB'][i];
+        }
+
+        globalThis.HarCore = {
+          jpegInfo,
+          buildPdf,
+          parseHar,
+          decodeResponseBody,
+          decodeRequestBody,
+          categorize,
+          extFromMime,
+          formatOf,
+          makeFilename,
+          dedupeNames,
+          sortEntries,
+          crc32,
+          buildZip,
+          buildManifestCsv,
+          formatBytes
+        };
+      })();
+    </script>
+    <script id="har-ui">
+      'use strict';
+
+      (() => {
+        const C = globalThis.HarCore;
+        const $ = id => document.getElementById(id);
+        const categories = [
+          ['all', 'すべて'],
+          ['doc', 'Doc'],
+          ['json', 'JSON'],
+          ['js', 'JS'],
+          ['css', 'CSS'],
+          ['img', '画像'],
+          ['media', 'メディア'],
+          ['font', 'フォント'],
+          ['other', 'その他']
+        ];
+        let entries = [];
+        let visible = [];
+        let selected = new Set();
+        let category = 'all';
+        let sortKey = 'index';
+        let sortDir = 'asc';
+        let active = null;
+        let selectionAnchor = null;
+        let previewUrl = null;
+        let filename = '';
+        let busy = false;
+        let busyLabel = 'ZIPを作成中…';
+        let loadToken = 0;
+        const rowChecks = new Map();
+        const formatChecks = new Map();
+        const chipButtons = new Map();
+        const headerButtons = [...document.querySelectorAll('[data-sort]')];
+        headerButtons.forEach(b => b.dataset.label = b.textContent);
+
+        function el(tag, text, cls) {
+          const n = document.createElement(tag);
+          if (text !== undefined) {
+            n.textContent = text;
+          }
+          if (cls) {
+            n.className = cls;
+          }
+          return n;
+        }
+
+        function report(error) {
+          $('message').textContent = error?.message || String(error);
+        }
+
+        function revokePreview() {
+          if (previewUrl) {
+            URL.revokeObjectURL(previewUrl);
+            previewUrl = null;
+          }
+        }
+
+        function download(bytes, name, mime) {
+          const url = URL.createObjectURL(new Blob([bytes], {
+            type: mime || 'application/octet-stream'
+          }));
+          const a = el('a');
+          a.href = url;
+          a.download = name;
+          document.body.append(a);
+          a.click();
+          a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 30000);
+        }
+
+        function single(entry, request = false) {
+          try {
+            const bytes = request ? C.decodeRequestBody(entry) : C.decodeResponseBody(entry);
+            if (bytes) {
+              download(bytes, request ? 'request_' + entry.name + '.txt' : C.makeFilename(entry, {
+                keepDirs: false
+              }), request ? 'text/plain;charset=utf-8' : entry.mime);
+            }
+          } catch (e) {
+            report(e);
+          }
+        }
+
+        function syncSelection() {
+          let size = 0;
+          for (const i of selected) {
+            size += entries[i].bodySize;
+          }
+          $('selection').textContent = `選択: ${selected.size} 件 / 合計 ${C.formatBytes(size)}`;
+          for (const [i, check] of rowChecks) {
+            check.checked = selected.has(i);
+          }
+          for (const {
+            check,
+            ids
+          } of formatChecks.values()) {
+            const n = ids.reduce((sum, i) => sum + Number(selected.has(i)), 0);
+            check.checked = ids.length > 0 && n === ids.length;
+            check.indeterminate = n > 0 && n < ids.length;
+          }
+          $('zip').disabled = busy || !selected.size;
+          const chosen = entries.filter(entry => selected.has(entry.index));
+          const mode = isDirectPdf(chosen, downloadOptions()) ? 'PDF' : 'ZIP';
+          $('zip').textContent = busy ? busyLabel : `選択を${mode}でダウンロード (${selected.size}件)`;
+        }
+
+        function buildFormats() {
+          formatChecks.clear();
+          $('format-options').replaceChildren();
+          const groups = new Map();
+          for (const e of entries) {
+            if (!groups.has(e.format)) {
+              groups.set(e.format, []);
+            }
+            if (e.hasBody) {
+              groups.get(e.format).push(e.index);
+            }
+          }
+          for (const [format, ids] of [...groups].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))) {
+            const label = el('label');
+            const check = el('input');
+            check.type = 'checkbox';
+            check.disabled = !ids.length;
+            label.append(check, document.createTextNode(`${format} (${ids.length})`));
+            check.addEventListener('change', () => {
+              for (const id of ids) {
+                check.checked ? selected.add(id) : selected.delete(id);
+              }
+              syncSelection();
+            });
+            formatChecks.set(format, {
+              check,
+              ids
+            });
+            $('format-options').append(label);
+          }
+        }
+
+        function filteredEntries() {
+          const query = $('search').value.toLowerCase();
+          const bodyOnly = $('body-only').checked;
+          return entries.filter(entry =>
+            (category === 'all' || entry.category === category) &&
+            (!bodyOnly || entry.hasBody) &&
+            entry.url.toLowerCase().includes(query)
+          );
+        }
+
+        function selectRow(entry, checked, extendRange) {
+          const clickedPosition = visible.findIndex(row => row.index === entry.index);
+          const anchorPosition = visible.findIndex(row => row.index === selectionAnchor);
+          const start = extendRange && anchorPosition >= 0 ? anchorPosition : clickedPosition;
+          for (let position = Math.min(start, clickedPosition); position <= Math.max(start, clickedPosition); position++) {
+            const row = visible[position];
+            if (row.hasBody) {
+              checked ? selected.add(row.index) : selected.delete(row.index);
+            }
+          }
+          selectionAnchor = entry.index;
+          syncSelection();
+        }
+
+        function createEntryRow(e) {
+          const tr = el('tr');
+          tr.dataset.index = e.index;
+          tr.classList.toggle('active', active === e.index);
+          const td = el('td');
+          const check = el('input');
+          check.type = 'checkbox';
+          check.disabled = !e.hasBody;
+          check.setAttribute('aria-label', `${e.name} を選択`);
+          check.checked = selected.has(e.index);
+          check.addEventListener('click', event => {
+            selectRow(e, check.checked, event.shiftKey);
+          });
+          td.append(check);
+          tr.append(td);
+          rowChecks.set(e.index, check);
+          const cells = [
+            [e.index + 1, ''],
+            [e.name, 'name'],
+            [e.method, ''],
+            [e.status, e.status >= 400 ? 'warning' : ''],
+            [e.format, ''],
+            [e.host + e.path, 'url'],
+            [e.hasBody ? C.formatBytes(e.bodySize) : '本体なし', ''],
+            [e.time, '']
+          ];
+          for (const [value, cls] of cells) {
+            const cell = el('td', String(value), cls);
+            if (cls === 'url') {
+              cell.title = e.url;
+            }
+            if (cls === 'name') {
+              cell.title = e.name;
+            }
+            tr.append(cell);
+          }
+          const dl = el('button', '⬇');
+          dl.disabled = !e.hasBody;
+          dl.setAttribute('aria-label', `${e.name} をダウンロード`);
+          dl.addEventListener('click', () => single(e));
+          const last = el('td');
+          last.append(dl);
+          tr.append(last);
+          tr.addEventListener('click', event => {
+            if (event.target.closest('button,input')) {
+              return;
+            }
+            showDetail(e);
+          });
+          return tr;
+        }
+
+        function syncSortControls() {
+          const ascending = sortDir === 'asc';
+          $('sort').value = sortKey;
+          $('direction').textContent = ascending ? '昇順 ▲' : '降順 ▼';
+          for (const button of headerButtons) {
+            const isActive = button.dataset.sort === sortKey;
+            const marker = isActive ? (ascending ? ' ▲' : ' ▼') : '';
+            const ariaSort = isActive ? (ascending ? 'ascending' : 'descending') : 'none';
+            button.textContent = button.dataset.label + marker;
+            button.parentElement.setAttribute('aria-sort', ariaSort);
+          }
+          for (const [key, button] of chipButtons) {
+            button.setAttribute('aria-pressed', String(category === key));
+          }
+        }
+
+        function render() {
+          selectionAnchor = null;
+          visible = C.sortEntries(filteredEntries(), sortKey, sortDir);
+          const fragment = document.createDocumentFragment();
+          rowChecks.clear();
+          for (const entry of visible) {
+            fragment.append(createEntryRow(entry));
+          }
+          $('rows').replaceChildren(fragment);
+          $('empty').hidden = visible.length > 0;
+          $('empty').textContent = entries.length ? '条件に一致する通信がありません。' : 'HARファイルを読み込んでください。';
+          syncSortControls();
+          syncSelection();
+        }
+
+        function section(title, text) {
+          const d = el('details');
+          const s = el('summary', title);
+          d.append(s, el('pre', text || 'なし'));
+          return d;
+        }
+
+        function headerText(items) {
+          return Array.isArray(items) ? items.map(header => `${header.name}: ${header.value}`).join('\n') : '';
+        }
+
+        function queryParameters(e) {
+          let query = e.raw?.request?.queryString;
+          if (!Array.isArray(query) || !query.length) {
+            try {
+              query = [...new URL(e.url).searchParams].map(([name, value]) => ({
+                name,
+                value
+              }));
+            } catch {
+              query = [];
+            }
+          }
+          return query;
+        }
+
+        function requestBodySection(e) {
+          const requestText = e.raw?.request?.postData?.text || '';
+          const req = section('リクエストボディ', requestText.slice(0, 200 * 1024));
+          if (requestText.length > 200 * 1024) {
+            req.append(el('p', '表示は先頭200K文字までです。'));
+          }
+          if (e.hasRequestBody) {
+            const b = el('button', 'リクエストボディをDL');
+            b.onclick = () => single(e, true);
+            req.append(b);
+          }
+          return req;
+        }
+
+        function appendResponsePreview(pane, e) {
+          try {
+            const bytes = C.decodeResponseBody(e);
+            if (!bytes) {
+              pane.append(el('p', '本体なし'));
+              return;
+            }
+            if (e.mime.startsWith('image/')) {
+              previewUrl = URL.createObjectURL(new Blob([bytes], {
+                type: e.mime
+              }));
+              const img = el('img');
+              img.src = previewUrl;
+              img.alt = e.name;
+              img.onerror = () => {
+                img.replaceWith(el('p', '画像を表示できません。'));
+              };
+              pane.append(el('p'), img);
+              if (e.format !== 'svg') {
+                return;
+              }
+            }
+            const textish = /^text\//.test(e.mime)
+              || /json|javascript|xml|svg/.test(e.mime)
+              || ['json', 'js', 'css', 'html', 'xml', 'txt', 'svg'].includes(e.format);
+            if (textish) {
+              const cap = 200 * 1024;
+              let text = new TextDecoder().decode(bytes.subarray(0, cap));
+              if (bytes.length <= cap && (e.format === 'json' || e.category === 'json')) {
+                try {
+                  text = JSON.stringify(JSON.parse(text), null, 2);
+                } catch {}
+              }
+              pane.append(el('pre', text));
+              if (bytes.length > cap) {
+                pane.append(el('p', '先頭200 KBのみ表示しています。全体はダウンロードしてください。', 'muted'));
+              }
+            } else {
+              pane.append(el('p', `プレビューできない形式です (${C.formatBytes(bytes.length)})`));
+            }
+          } catch (error) {
+            pane.append(el('p', error.message, 'warning'));
+          }
+        }
+
+        function showDetail(e) {
+          active = e.index;
+          for (const row of $('rows').children) {
+            row.classList.toggle('active', Number(row.dataset.index) === active);
+          }
+          revokePreview();
+          const pane = $('detail');
+          pane.replaceChildren(el('h2', e.name), el('p', e.url));
+          pane.append(
+            el('p', `${e.method} / ${e.status} ${e.statusText}`),
+            el('p', `${e.mime || 'MIME不明'} / ${C.formatBytes(e.bodySize)} / ${e.time} ms`),
+            section('リクエストヘッダー', headerText(e.raw?.request?.headers)),
+            section('クエリ文字列パラメーター', headerText(queryParameters(e))),
+            requestBodySection(e),
+            section('レスポンスヘッダー', headerText(e.raw?.response?.headers)),
+            el('h2', 'レスポンスプレビュー')
+          );
+          const button = el('button', 'レスポンスをDL');
+          button.disabled = !e.hasBody;
+          button.onclick = () => single(e);
+          pane.append(button);
+          appendResponsePreview(pane, e);
+        }
+
+        function resetForLoad() {
+          entries = [];
+          visible = [];
+          selected.clear();
+          category = 'all';
+          sortKey = 'index';
+          sortDir = 'asc';
+          active = null;
+          filename = '';
+          revokePreview();
+          $('search').value = '';
+          $('body-only').checked = false;
+          $('keep-dirs').checked = true;
+          $('include-requests').checked = false;
+          $('merge-pdf').checked = false;
+          $('keep-images').checked = false;
+          $('keep-images').disabled = true;
+          $('message').textContent = '';
+          $('loaded').textContent = '読み込み中…';
+          $('detail').replaceChildren(el('h2', '通信の詳細'), el('p', '行をクリックすると詳細を表示します。', 'muted'));
+          buildFormats();
+          render();
+        }
+
+        function updateCategoryCounts() {
+          for (const [key, b] of chipButtons) {
+            const count = key === 'all' ? entries.length : entries.filter(e => e.category === key).length;
+            b.textContent = categories.find(c => c[0] === key)[1] + ` (${count})`;
+          }
+        }
+
+        async function load(file) {
+          const token = ++loadToken;
+          resetForLoad();
+          try {
+            const text = await file.text();
+            if (token !== loadToken) {
+              return;
+            }
+            entries = C.parseHar(text);
+            filename = file.name;
+            $('loaded').textContent = `${filename} — ${entries.length} 件`;
+            buildFormats();
+          } catch (e) {
+            if (token !== loadToken) {
+              return;
+            }
+            $('loaded').textContent = '読み込みに失敗しました';
+            report(e);
+          }
+          updateCategoryCounts();
+          render();
+        }
+        for (const [key, label] of categories) {
+          const b = el('button', label + ' (0)');
+          b.onclick = () => {
+            category = key;
+            render();
+          };
+          chipButtons.set(key, b);
+          $('chips').append(b);
+        }
+        $('file').onchange = event => {
+          const file = event.target.files[0];
+          if (file) {
+            load(file);
+          }
+          event.target.value = '';
+        };
+        let dragDepth = 0;
+        document.addEventListener('dragenter', e => {
+          if ([...e.dataTransfer.types].includes('Files')) {
+            e.preventDefault();
+            dragDepth++;
+            $('drop-overlay').classList.add('visible');
+          }
+        });
+        document.addEventListener('dragover', e => e.preventDefault());
+        document.addEventListener('dragleave', () => {
+          if (--dragDepth <= 0) {
+            dragDepth = 0;
+            $('drop-overlay').classList.remove('visible');
+          }
+        });
+        document.addEventListener('drop', e => {
+          e.preventDefault();
+          dragDepth = 0;
+          $('drop-overlay').classList.remove('visible');
+          if (e.dataTransfer.files[0]) {
+            load(e.dataTransfer.files[0]);
+          }
+        });
+        let searchTimer;
+        $('search').oninput = () => {
+          clearTimeout(searchTimer);
+          searchTimer = setTimeout(render, 120);
+        };
+        $('body-only').onchange = render;
+        $('sort').onchange = () => {
+          sortKey = $('sort').value;
+          render();
+        };
+        $('direction').onclick = () => {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          render();
+        };
+        headerButtons.forEach(b => b.onclick = () => {
+          if (sortKey === b.dataset.sort) {
+            sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+          } else {
+            sortKey = b.dataset.sort;
+            sortDir = 'asc';
+          }
+          render();
+        });
+        $('select-visible').onclick = () => {
+          for (const e of visible) {
+            if (e.hasBody) {
+              selected.add(e.index);
+            }
+          }
+          syncSelection();
+        };
+        $('clear').onclick = () => {
+          selected.clear();
+          syncSelection();
+        };
+
+        function downloadOptions() {
+          return {
+            keepDirs: $('keep-dirs').checked,
+            requests: $('include-requests').checked,
+            mergePdf: $('merge-pdf').checked,
+            keepImages: $('keep-images').checked
+          };
+        }
+
+        function isImage(entry) {
+          return entry.mime.startsWith('image/');
+        }
+
+        function isDirectPdf(chosen, options) {
+          return options.mergePdf && chosen.length > 0 && chosen.every(isImage) && !options.keepImages
+            && !(options.requests && chosen.some(entry => entry.hasRequestBody));
+        }
+
+        function yieldToUi() {
+          return new Promise(resolve => setTimeout(resolve, 0));
+        }
+
+        function svgRasterSource(bytes) {
+          const parsed = new DOMParser().parseFromString(new TextDecoder().decode(bytes), 'image/svg+xml');
+          const svg = parsed.documentElement;
+          if (svg.localName !== 'svg') {
+            return { bytes };
+          }
+          const widthText = svg.style?.width || svg.getAttribute('width') || '';
+          const heightText = svg.style?.height || svg.getAttribute('height') || '';
+          const absolute = /^\s*\d*\.?\d+(?:px|in|cm|mm|pt|pc)?\s*$/i;
+          if (absolute.test(widthText) && absolute.test(heightText)
+              && Number.parseFloat(widthText) > 0 && Number.parseFloat(heightText) > 0) {
+            return { bytes };
+          }
+          const viewBox = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+          let ratio = 1;
+          if (viewBox.length === 4 && viewBox.every(Number.isFinite) && viewBox[2] > 0 && viewBox[3] > 0) {
+            ratio = viewBox[2] / viewBox[3];
+          }
+          const width = 1024;
+          const height = 1024 / ratio;
+          const scale = Math.min(1, 8000 / Math.max(width, height));
+          svg.setAttribute('width', String(Math.max(1, Math.round(width * scale))));
+          svg.setAttribute('height', String(Math.max(1, Math.round(height * scale))));
+          const xml = new XMLSerializer().serializeToString(parsed);
+          return { bytes: new TextEncoder().encode(xml), displayWidth: width, displayHeight: height };
+        }
+
+        async function rasterizeImage(entry, bytes) {
+          const source = entry.mime === 'image/svg+xml' ? svgRasterSource(bytes) : { bytes };
+          const url = URL.createObjectURL(new Blob([source.bytes], { type: entry.mime }));
+          const image = new Image();
+          let canvas;
+          try {
+            image.src = url;
+            await image.decode();
+            let width = image.naturalWidth;
+            let height = image.naturalHeight;
+            if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+              throw new Error('画像サイズを読み込めません。');
+            }
+            const displayWidth = source.displayWidth || width;
+            const displayHeight = source.displayHeight || height;
+            const scale = Math.min(1, 8000 / Math.max(width, height));
+            width = Math.max(1, Math.round(width * scale));
+            height = Math.max(1, Math.round(height * scale));
+            canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const context = canvas.getContext('2d');
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, width, height);
+            context.drawImage(image, 0, 0, width, height);
+            const rgba = context.getImageData(0, 0, width, height).data;
+            const rgb = new Uint8Array(width * height * 3);
+            for (let source = 0, target = 0; source < rgba.length; source += 4) {
+              rgb[target++] = rgba[source];
+              rgb[target++] = rgba[source + 1];
+              rgb[target++] = rgba[source + 2];
+            }
+            const compressed = new Blob([rgb]).stream().pipeThrough(new CompressionStream('deflate'));
+            const data = new Uint8Array(await new Response(compressed).arrayBuffer());
+            return { kind: 'flate', bytes: data, width, height, displayWidth, displayHeight };
+          } finally {
+            URL.revokeObjectURL(url);
+            image.removeAttribute('src');
+            if (canvas) {
+              canvas.width = 0;
+              canvas.height = 0;
+            }
+          }
+        }
+
+        async function imageToPdfPage(entry) {
+          const bytes = C.decodeResponseBody(entry);
+          if (!bytes) {
+            throw new Error('画像の本体がありません。');
+          }
+          const info = C.jpegInfo(bytes);
+          const image = info && [1, 3].includes(info.components) && info.orientation === 1
+            ? { kind: 'jpeg', bytes, width: info.width, height: info.height, components: info.components }
+            : await rasterizeImage(entry, bytes);
+          const width = image.displayWidth || image.width;
+          const height = image.displayHeight || image.height;
+          const scale = Math.min(0.75, 14400 / Math.max(width, height));
+          return { widthPt: width * scale, heightPt: height * scale, image };
+        }
+
+        async function buildImagesPdf(images, token) {
+          const pages = [];
+          const pageNumbers = new Map();
+          const failed = [];
+          for (let index = 0; index < images.length; index++) {
+            if (token !== loadToken) {
+              return null;
+            }
+            busyLabel = `PDFを作成中… ${index + 1}/${images.length}`;
+            syncSelection();
+            await yieldToUi();
+            const entry = images[index];
+            try {
+              pages.push(await imageToPdfPage(entry));
+              pageNumbers.set(entry.index, pages.length);
+            } catch {
+              failed.push(entry.name);
+            }
+          }
+          await yieldToUi();
+          return { bytes: pages.length ? C.buildPdf(pages) : null, pageNumbers, failed };
+        }
+
+        function manifestRow(entry, file, mime = entry.mime) {
+          return { file, url: entry.url, method: entry.method, status: entry.status, mime };
+        }
+
+        function addZipFile(files, rows, entry, name, bytes, mime) {
+          const file = { name, bytes };
+          files.push(file);
+          rows.push({ ...manifestRow(entry, '', mime), fileRecord: file });
+        }
+
+        async function collectZipFiles(chosen, options, pdf, pdfName) {
+          const files = [];
+          const rows = [];
+          // Reserve the PDF name first so source filenames cannot take it.
+          if (pdf?.bytes) {
+            files.push({ name: pdfName, bytes: pdf.bytes });
+          }
+          for (let index = 0; index < chosen.length; index++) {
+            const entry = chosen[index];
+            const page = pdf?.pageNumbers.get(entry.index);
+            if (page) {
+              rows.push(manifestRow(entry, `${pdfName}#page=${page}`));
+            }
+            if (!pdf || !isImage(entry) || options.keepImages) {
+              try {
+                addZipFile(files, rows, entry, C.makeFilename(entry, { keepDirs: options.keepDirs }), C.decodeResponseBody(entry));
+              } catch (error) {
+                // An invalid Base64 image cannot be retained either; its PDF failure is already reported.
+                if (!pdf || !isImage(entry)) {
+                  throw error;
+                }
+              }
+            }
+            if (options.requests && entry.hasRequestBody) {
+              const name = `_requests/${String(entry.index).padStart(3, '0')}_${entry.name}.txt`;
+              addZipFile(files, rows, entry, name, C.decodeRequestBody(entry), entry.raw.request.postData.mimeType || 'text/plain');
+            }
+            if (index % 100 === 0) {
+              await yieldToUi();
+            }
+          }
+          return { files, rows };
+        }
+
+        function appendManifest(files, rows) {
+          const names = C.dedupeNames(['manifest.csv', ...files.map(file => file.name)]).slice(1);
+          files.forEach((file, index) => {
+            file.name = names[index];
+          });
+          rows.forEach(row => {
+            if (row.fileRecord) {
+              row.file = row.fileRecord.name;
+            }
+          });
+          files.push({ name: 'manifest.csv', bytes: new TextEncoder().encode(C.buildManifestCsv(rows)) });
+        }
+
+        async function prepareImagesPdf(chosen, options, token, notes) {
+          if (!options.mergePdf) {
+            return null;
+          }
+          const images = chosen.filter(isImage);
+          if (!images.length) {
+            notes.push('選択に画像がないため、PDFは作成しませんでした。');
+            return null;
+          }
+          if (typeof CompressionStream === 'undefined') {
+            notes.push('このブラウザーはPDF結合に対応していません');
+            return null;
+          }
+          const pdf = await buildImagesPdf(images, token);
+          if (pdf?.failed.length) {
+            notes.push('PDFに含められなかった画像: ' + pdf.failed.join(', '));
+          }
+          if (pdf && !pdf.bytes) {
+            notes.push('PDFに含める画像を読み込めませんでした。');
+          }
+          return pdf;
+        }
+
+        async function downloadSelection() {
+          if (busy || !selected.size) {
+            return;
+          }
+          busy = true;
+          busyLabel = 'ZIPを作成中…';
+          $('message').textContent = '';
+          const token = loadToken;
+          const options = downloadOptions();
+          const base = filename.replace(/\.har$/i, '');
+          const pdfName = base + '_images.pdf';
+          const chosen = C.sortEntries(entries.filter(entry => selected.has(entry.index)), sortKey, sortDir);
+          const notes = [];
+          syncSelection();
+          try {
+            await yieldToUi();
+            const pdf = await prepareImagesPdf(chosen, options, token, notes);
+            if (token !== loadToken) {
+              return;
+            }
+            if (pdf?.bytes && isDirectPdf(chosen, options)) {
+              download(pdf.bytes, pdfName, 'application/pdf');
+            } else {
+              busyLabel = 'ZIPを作成中…';
+              syncSelection();
+              const { files, rows } = await collectZipFiles(chosen, options, pdf, pdfName);
+              if (token !== loadToken) {
+                return;
+              }
+              if (files.length) {
+                appendManifest(files, rows);
+                download(C.buildZip(files), base + '_extracted.zip', 'application/zip');
+              }
+            }
+            $('message').textContent = notes.join('\n');
+          } catch (error) {
+            if (token === loadToken) {
+              report([...notes, error.message].join('\n'));
+            }
+          } finally {
+            busy = false;
+            syncSelection();
+          }
+        }
+
+        $('merge-pdf').onchange = () => {
+          $('keep-images').disabled = !$('merge-pdf').checked;
+          syncSelection();
+        };
+        $('keep-images').onchange = syncSelection;
+        $('include-requests').onchange = syncSelection;
+        $('zip').onclick = downloadSelection;
+        window.addEventListener('pagehide', revokePreview);
+        render();
+      })();
+    </script>
+  </body>
+</html>
